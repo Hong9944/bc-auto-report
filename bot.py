@@ -166,8 +166,8 @@ async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = []
     lines.append("👑 Owners")
     for o in OWNERS:
-    lines.append(f"@{o}")
-    lines.append("")
+        lines.append(f"@{o}")
+        lines.append("")
 
     lines.append("👤 Admins")
     if ADMINS:
