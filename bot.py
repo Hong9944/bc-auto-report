@@ -22,7 +22,7 @@ from tg_report_reader import (
 OWNERS = [
     "rogerben717",
     "mlys94"
-]   # 改成你自己的 Telegram username（不要加 @）
+]
 ADMINS_FILE = "admins.json"
 
 MENU = [
@@ -123,7 +123,8 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("请输入正确 username，例如：/addadmin @Whoglobal")
         return
 
-    if username == OWNER_USERNAME.lower():
+    # 修正：如果输入的是 owner，不需要再加成 admin
+    if username in [o.lower() for o in OWNERS]:
         await update.message.reply_text("Owner 不需要添加为管理员。")
         return
 
@@ -167,7 +168,7 @@ async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append("👑 Owners")
     for o in OWNERS:
         lines.append(f"@{o}")
-        lines.append("")
+    lines.append("")
 
     lines.append("👤 Admins")
     if ADMINS:
