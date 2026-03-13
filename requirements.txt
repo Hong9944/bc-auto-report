@@ -1,4 +1,1 @@
-python-telegram-bot==13.15
-telethon
-pandas
-openpyxl
+python-telegram-bot==20.7
