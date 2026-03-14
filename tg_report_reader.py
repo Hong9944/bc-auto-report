@@ -264,7 +264,6 @@ async def find_today_latest_valid_report(client, dialog, limit=500):
 
 async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1000):
     yesterday = (now_local() - timedelta(days=1)).date()
-    cutoff = time(12, 0)
 
     async for msg in client.iter_messages(dialog.id, limit=limit):
         if not msg.message:
@@ -275,10 +274,6 @@ async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1
 
         # 只抓昨天
         if dt.date() != yesterday:
-            continue
-
-        # 只抓昨天 12:00 前
-        if dt.time() >= cutoff:
             continue
 
         # 只抓像正式报表的内容
