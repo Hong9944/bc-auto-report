@@ -103,8 +103,7 @@ def parse_today_report(text: str):
     已出账 (x笔)
     总已入账
     总已出账
-    P寄存
-    未下发
+    总入款额
     """
     if not text:
         return None
@@ -117,23 +116,31 @@ def parse_today_report(text: str):
     total_in = extract_first_number(r"总已入账\s*:\s*([-\d,\.]+)", text)
     total_out = extract_first_number(r"总已出账\s*:\s*([-\d,\.]+)", text)
 
-    # 兼容一些可能出现的写法
+    # 兼容不同写法
     if total_in is None:
         total_in = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
-    # 如果还是没有，就用 总入款额
+
+    # 如果没有 总已入账 / 总入账，就用 总入款额
+    fallback_total_in = None
     if total_in is None:
-        total_in = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
+        fallback_total_in = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
+        total_in = fallback_total_in
+
     if total_out is None:
         total_out = extract_first_number(r"总出账\s*:\s*([-\d,\.]+)", text)
 
-    p_hold = extract_first_number(r"P\s*寄存\s*:\s*([-\d,\.]+)", text)
-    unpaid = extract_first_number(r"未下发\s*:\s*([-\d,\.]+)", text)
-
-    # 今日实时至少要有 总已入账 / 总已出账
-    if total_in is None or total_out is None:
+    # 只要 这3个字段 任何一个有值，就算有效报表
+    if total_in is None and total_out is None:
         return None
 
-    # 过滤完全 0/0
+    # 没有就补 0，方便后面统一显示
+    if total_in is None:
+        total_in = 0.0
+
+    if total_out is None:
+        total_out = 0.0
+
+    # 过滤完全 0 / 0
     if total_in == 0 and total_out == 0:
         return None
 
@@ -142,8 +149,8 @@ def parse_today_report(text: str):
         "out_count": out_count if out_count is not None else 0,
         "total_in": total_in,
         "total_out": total_out,
-        "p_hold": p_hold,
-        "unpaid": unpaid,
+        "p_hold": None,
+        "unpaid": None,
     }
 
 
