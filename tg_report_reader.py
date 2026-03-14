@@ -104,6 +104,8 @@ def parse_today_report(text: str):
     总已入账
     总已出账
     总入款额
+    P寄存
+    未下发
     """
     if not text:
         return None
@@ -121,36 +123,30 @@ def parse_today_report(text: str):
         total_in = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
 
     # 如果没有 总已入账 / 总入账，就用 总入款额
-    fallback_total_in = None
     if total_in is None:
-        fallback_total_in = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
-        total_in = fallback_total_in
+        total_in = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
 
     if total_out is None:
         total_out = extract_first_number(r"总出账\s*:\s*([-\d,\.]+)", text)
 
-    # 只要 这3个字段 任何一个有值，就算有效报表
+    # 只要 总入款额 / 总已入账 / 总已出账 任意一个有，就算有效
     if total_in is None and total_out is None:
         return None
 
-    # 没有就补 0，方便后面统一显示
+    # 没有就补 0
     if total_in is None:
         total_in = 0.0
 
     if total_out is None:
         total_out = 0.0
 
-    # 过滤完全 0 / 0
-    if total_in == 0 and total_out == 0:
-        return None
-
     return {
         "in_count": in_count if in_count is not None else 0,
         "out_count": out_count if out_count is not None else 0,
         "total_in": total_in,
         "total_out": total_out,
-        "p_hold": None,
-        "unpaid": None,
+        "p_hold": extract_first_number(r"P\s*寄存\s*:\s*([-\d,\.]+)", text),
+        "unpaid": extract_first_number(r"未下发\s*:\s*([-\d,\.]+)", text),
     }
 
 
@@ -175,19 +171,17 @@ def parse_yesterday_report(text: str):
     total_deposit = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
     if total_deposit is None:
         total_deposit = extract_first_number(r"总已入账\s*:\s*([-\d,\.]+)", text)
+    if total_deposit is None:
+        total_deposit = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
 
     should_send = extract_first_number(r"应下发\s*:\s*([-\d,\.]+)", text)
 
-    # 这里为了避免和“已下发(x笔)”冲突，强制带冒号
+    # 避免和 已下发(x笔) 冲突，强制带冒号
     sent_amount = extract_first_number(r"已下发\s*:\s*([-\d,\.]+)", text)
     unpaid = extract_first_number(r"未下发\s*:\s*([-\d,\.]+)", text)
 
-    # 昨日报表至少要有 总入款额 + 未下发
+    # 昨日报表至少要有 总入款额/总已入账/总入账 其中一个，且要有 未下发
     if total_deposit is None or unpaid is None:
-        return None
-
-    # 过滤完全 0/0
-    if total_deposit == 0 and unpaid == 0:
         return None
 
     return {
@@ -237,28 +231,38 @@ async def get_bcsg_groups(client):
     return groups
 
 
-async def find_today_latest_valid_report(client, dialog, limit=3000):
+async def find_today_latest_valid_report(client, dialog, limit=500):
     today = now_local().date()
 
     async for msg in client.iter_messages(dialog.id, limit=limit):
         if not msg.message:
             continue
 
+        text = normalize_text(msg.message)
         dt = msg.date.astimezone(MY_TZ)
 
         if dt.date() != today:
             continue
 
-        parsed = parse_today_report(msg.message)
+        # 只抓像正式报表的内容
+        if (
+            "已入账 (" not in text
+            and "总入款额:" not in text
+            and "总已入账:" not in text
+            and "总已出账:" not in text
+        ):
+            continue
+
+        parsed = parse_today_report(text)
         if parsed:
-            # 因为 iter_messages 默认从新到旧
-            # 第一条符合条件的就是今天最新有效报表
+            # iter_messages 是从新到旧
+            # 所以拿到的第一条 parsed 成功，就是今天最后一条有效报表
             return dt, parsed
 
     return None
 
 
-async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=3000):
+async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1000):
     yesterday = (now_local() - timedelta(days=1)).date()
     cutoff = time(12, 0)
 
@@ -266,19 +270,30 @@ async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=3
         if not msg.message:
             continue
 
+        text = normalize_text(msg.message)
         dt = msg.date.astimezone(MY_TZ)
 
         # 只抓昨天
         if dt.date() != yesterday:
             continue
 
-        # 只抓 12:00 前
+        # 只抓昨天 12:00 前
         if dt.time() >= cutoff:
             continue
 
-        parsed = parse_yesterday_report(msg.message)
+        # 只抓像正式报表的内容
+        if (
+            "已入账 (" not in text
+            and "总入款额:" not in text
+            and "总已入账:" not in text
+            and "总已出账:" not in text
+        ):
+            continue
+
+        parsed = parse_yesterday_report(text)
         if parsed:
-            # 从新到旧扫，所以第一条就是“昨天12点前最后一条有效报表”
+            # iter_messages 是从新到旧
+            # 所以拿到的第一条 parsed 成功，就是昨天 12:00 前最后一条有效报表
             return dt, parsed
 
     return None
