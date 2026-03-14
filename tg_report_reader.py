@@ -153,17 +153,13 @@ def parse_today_report(text: str):
 def parse_yesterday_report(text: str):
     """
     昨日导出Excel识别：
-    已入账 (x笔)
-    已下发 (x笔)
-    总入款额
-    应下发
-    已下发
-    未下发
-
     规则：
-    1. 优先抓 总已入账
-    2. 如果没有 总已入账，才抓 总入款额
-    3. 抓到的数据统一放进 total_in（Excel 的 总已入账 栏）
+    1. 总已入账 优先，没有才用 总入款额
+    2. 出账优先抓 总已出账 / 已出账(x笔)
+    3. 如果旧格式没有“出账”，才退回抓 已下发
+    4. 抓到的数据统一放进 Excel 的：
+       - 总已入账
+       - 总已出账
     """
     if not text:
         return None
@@ -171,31 +167,43 @@ def parse_yesterday_report(text: str):
     text = normalize_text(text)
 
     in_count = extract_first_int(r"已入账\s*\((\d+)\s*笔\)", text)
-    sent_count = extract_first_int(r"已下发\s*\((\d+)\s*笔\)", text)
+
+    # 优先认 已出账(x笔)，没有才认 已下发(x笔)
+    out_count = extract_first_int(r"已出账\s*\((\d+)\s*笔\)", text)
+    if out_count is None:
+        out_count = extract_first_int(r"已下发\s*\((\d+)\s*笔\)", text)
 
     # 重点：优先抓 总已入账，没有才抓 总入款额
-    total_deposit = extract_first_number(r"总已入账\s*:\s*([-\d,\.]+)", text)
-    if total_deposit is None:
-        total_deposit = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
-    if total_deposit is None:
-        total_deposit = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
+    total_in = extract_first_number(r"总已入账\s*:\s*([-\d,\.]+)", text)
+    if total_in is None:
+        total_in = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
+    if total_in is None:
+        total_in = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
 
-    should_send = extract_first_number(r"应下发\s*:\s*([-\d,\.]+)", text)
+    # 优先抓 总已出账，没有才抓 总出账，再没有才抓 已下发
+    total_out = extract_first_number(r"总已出账\s*:\s*([-\d,\.]+)", text)
+    if total_out is None:
+        total_out = extract_first_number(r"总出账\s*:\s*([-\d,\.]+)", text)
+    if total_out is None:
+        total_out = extract_first_number(r"已下发\s*:\s*([-\d,\.]+)", text)
 
-    # 避免和 已下发(x笔) 冲突，强制带冒号
-    sent_amount = extract_first_number(r"已下发\s*:\s*([-\d,\.]+)", text)
+    # P寄存 / 应下发 兼容
+    p_hold = extract_first_number(r"P\s*寄存\s*:\s*([-\d,\.]+)", text)
+    if p_hold is None:
+        p_hold = extract_first_number(r"应下发\s*:\s*([-\d,\.]+)", text)
+
     unpaid = extract_first_number(r"未下发\s*:\s*([-\d,\.]+)", text)
 
-    # 昨日报表至少要有 总已入账/总入款额/总入账 其中一个，且要有 未下发
-    if total_deposit is None or unpaid is None:
+    # 至少要有“总入账类”其中一个才算有效
+    if total_in is None:
         return None
 
     return {
         "in_count": in_count if in_count is not None else 0,
-        "out_count": sent_count if sent_count is not None else 0,
-        "total_in": total_deposit,
-        "total_out": sent_amount if sent_amount is not None else 0.0,
-        "p_hold": should_send,
+        "out_count": out_count if out_count is not None else 0,
+        "total_in": total_in,
+        "total_out": total_out if total_out is not None else 0.0,
+        "p_hold": p_hold,
         "unpaid": unpaid,
     }
 
@@ -270,7 +278,6 @@ async def find_today_latest_valid_report(client, dialog, limit=500):
 
 async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1000):
     yesterday = (now_local() - timedelta(days=1)).date()
-    noon_cutoff = time(12, 0)
 
     async for msg in client.iter_messages(dialog.id, limit=limit):
         if not msg.message:
@@ -279,12 +286,8 @@ async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1
         text = normalize_text(msg.message)
         dt = msg.date.astimezone(MY_TZ)
 
-        # 只抓昨天
+        # 只抓昨天整天的数据（00:00 - 23:59:59）
         if dt.date() != yesterday:
-            continue
-
-        # 只抓昨天 12:00 前
-        if dt.time() >= noon_cutoff:
             continue
 
         # 只抓像正式报表的内容
@@ -293,13 +296,15 @@ async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1
             and "总入款额:" not in text
             and "总已入账:" not in text
             and "总已出账:" not in text
+            and "总出账:" not in text
+            and "已下发:" not in text
         ):
             continue
 
         parsed = parse_yesterday_report(text)
         if parsed:
             # iter_messages 是从新到旧
-            # 所以拿到的第一条 parsed 成功，就是昨天 12:00 前最后一条有效报表
+            # 所以第一条成功的，就是昨天最后一条有效报表
             return dt, parsed
 
     return None
