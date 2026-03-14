@@ -159,6 +159,11 @@ def parse_yesterday_report(text: str):
     应下发
     已下发
     未下发
+
+    规则：
+    1. 优先抓 总已入账
+    2. 如果没有 总已入账，才抓 总入款额
+    3. 抓到的数据统一放进 total_in（Excel 的 总已入账 栏）
     """
     if not text:
         return None
@@ -168,9 +173,10 @@ def parse_yesterday_report(text: str):
     in_count = extract_first_int(r"已入账\s*\((\d+)\s*笔\)", text)
     sent_count = extract_first_int(r"已下发\s*\((\d+)\s*笔\)", text)
 
-    total_deposit = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
+    # 重点：优先抓 总已入账，没有才抓 总入款额
+    total_deposit = extract_first_number(r"总已入账\s*:\s*([-\d,\.]+)", text)
     if total_deposit is None:
-        total_deposit = extract_first_number(r"总已入账\s*:\s*([-\d,\.]+)", text)
+        total_deposit = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
     if total_deposit is None:
         total_deposit = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
 
@@ -180,7 +186,7 @@ def parse_yesterday_report(text: str):
     sent_amount = extract_first_number(r"已下发\s*:\s*([-\d,\.]+)", text)
     unpaid = extract_first_number(r"未下发\s*:\s*([-\d,\.]+)", text)
 
-    # 昨日报表至少要有 总入款额/总已入账/总入账 其中一个，且要有 未下发
+    # 昨日报表至少要有 总已入账/总入款额/总入账 其中一个，且要有 未下发
     if total_deposit is None or unpaid is None:
         return None
 
@@ -264,6 +270,7 @@ async def find_today_latest_valid_report(client, dialog, limit=500):
 
 async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1000):
     yesterday = (now_local() - timedelta(days=1)).date()
+    noon_cutoff = time(12, 0)
 
     async for msg in client.iter_messages(dialog.id, limit=limit):
         if not msg.message:
@@ -274,6 +281,10 @@ async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=1
 
         # 只抓昨天
         if dt.date() != yesterday:
+            continue
+
+        # 只抓昨天 12:00 前
+        if dt.time() >= noon_cutoff:
             continue
 
         # 只抓像正式报表的内容
