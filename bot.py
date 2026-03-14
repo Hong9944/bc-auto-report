@@ -21,9 +21,9 @@ from tg_report_reader import (
 # =========================
 OWNERS = [
     "rogerben717",
-    "mlys94"
-    "Whoglobal"
-    "Mcdonald_666"
+    "mlys94",
+    "Whoglobal",
+    "Mcdonald_666",
     "BCpayBTC"
 ]
 ADMINS_FILE = "admins.json"
