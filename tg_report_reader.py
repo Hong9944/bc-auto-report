@@ -229,7 +229,7 @@ async def get_bcsg_groups(client):
     return groups
 
 
-async def find_today_latest_valid_report(client, dialog, limit=300):
+async def find_today_latest_valid_report(client, dialog, limit=3000):
     today = now_local().date()
 
     async for msg in client.iter_messages(dialog.id, limit=limit):
@@ -250,7 +250,7 @@ async def find_today_latest_valid_report(client, dialog, limit=300):
     return None
 
 
-async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=800):
+async def find_yesterday_before_noon_latest_valid_report(client, dialog, limit=3000):
     yesterday = (now_local() - timedelta(days=1)).date()
     cutoff = time(12, 0)
 
