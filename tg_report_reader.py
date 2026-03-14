@@ -120,6 +120,9 @@ def parse_today_report(text: str):
     # 兼容一些可能出现的写法
     if total_in is None:
         total_in = extract_first_number(r"总入账\s*:\s*([-\d,\.]+)", text)
+    # 如果还是没有，就用 总入款额
+    if total_in is None:
+        total_in = extract_first_number(r"总入款额\s*:\s*([-\d,\.]+)", text)
     if total_out is None:
         total_out = extract_first_number(r"总出账\s*:\s*([-\d,\.]+)", text)
 
