@@ -214,12 +214,20 @@ async def get_bcsg_groups(client):
     groups = []
 
     for dialog in dialogs:
-        code = extract_bcsg_code(dialog.name)
-        if code:
-            groups.append({
-                "dialog": dialog,
-                "code": code
-            })
+        name = dialog.name or ""
+        code = extract_bcsg_code(name)
+
+        if not code:
+            continue
+
+        # 跳过 Settlement 群
+        if "settlement" in name.lower():
+            continue
+
+        groups.append({
+            "dialog": dialog,
+            "code": code
+        })
 
     def sort_key(item):
         m = re.search(r"\d+", item["code"])
